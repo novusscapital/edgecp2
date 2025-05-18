@@ -39,6 +39,7 @@ Componente	Função
 🔘 Botão	Navegação entre telas
 
 
+
 🚀 **Instalação**
 
 Clone este repositório ou baixe o arquivo script.ino.
