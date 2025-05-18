@@ -1,5 +1,7 @@
 Este projeto utiliza um sistema embarcado com Arduino para exibir informações ambientais como hora/data, luminosidade, temperatura e umidade em um display LCD. Sensores e atuadores são integrados para facilitar o monitoramento visual e sonoro das condições ambientais.
 
+--------
+
 📦 **Pré-requisitos**
 
 Arduino IDE instalado em sua máquina
@@ -8,6 +10,7 @@ Placa Arduino Uno (ou compatível)
 
 Componentes conectados conforme o diagrama de circuito: (https://wokwi.com/projects/407336114585508865)
 
+--------
 
 📚 **Dependências**
 
@@ -19,6 +22,7 @@ Componentes conectados conforme o diagrama de circuito: (https://wokwi.com/proje
 
 #include <DHT.h>              // Leitura do sensor DHT22
 
+--------
 
 ⚙️ **Componentes Utilizados**
 
@@ -38,7 +42,7 @@ Componente	Função
 
 🔘 Botão	Navegação entre telas
 
-
+--------
 
 🚀 **Instalação**
 
@@ -52,6 +56,7 @@ Selecione a porta e a placa correta.
 
 Compile e faça o upload para a placa.
 
+--------
 
 🛠️ **Ferramentas Utilizadas**
 
@@ -59,6 +64,7 @@ Wokwi – para simulação do circuito e testes online
 
 Arduino IDE – desenvolvimento e upload do código para o Arduino
 
+--------
 
 👨‍💻 **Autores**
 
