@@ -1,210 +1,232 @@
-#include <WiFi.h>
-#include <PubSubClient.h>
+#include <Wire.h>
+#include <LiquidCrystal.h>
+#include <RTClib.h>
 #include <DHT.h>
 
-#define DHTPIN 4      // Pino ao qual o sensor DHT está conectado
-#define DHTTYPE DHT22 // Tipo do sensor DHT (DHT22 neste caso)
+// LCD (modo paralelo)
+const int rs = 12, en = 11, d4 = 5, d5 = 4, d6 = 3, d7 = 2;
+LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
+RTC_DS1307 rtc;
 
+// DHT
+#define DHTPIN A2        // Pino de dados do DHT22
+#define DHTTYPE DHT22    // Tipo do sensor
 DHT dht(DHTPIN, DHTTYPE);
 
-// Configurações - variáveis editáveis
-const char* default_SSID = "Wokwi-GUEST"; // Nome da rede Wi-Fi
-const char* default_PASSWORD = ""; // Senha da rede Wi-Fi
-const char* default_BROKER_MQTT = "46.17.108.113"; // IP do Broker MQTT
-const int default_BROKER_PORT = 1883; // Porta do Broker MQTT
-const char* default_TOPICO_SUBSCRIBE = "/TEF/lamp777/cmd"; // Tópico MQTT de escuta
-const char* default_TOPICO_PUBLISH_1 = "/TEF/lamp777/attrs"; // Tópico MQTT de envio de informações para Broker
-const char* default_TOPICO_PUBLISH_2 = "/TEF/lamp777/attrs/l"; // Tópico MQTT de envio de informações para Broker
-const char* default_TOPICO_PUBLISH_3 = "/TEF/lamp777/attrs/t"; // Tópico MQTT de envio de informações para Broker
-const char* default_TOPICO_PUBLISH_4 = "/TEF/lamp777/attrs/h"; // Tópico MQTT de envio de informações para Broker
-const char* default_ID_MQTT = "fiware_777"; // ID MQTT
-const int default_D4 = 2; // Pino do LED onboard
-// Declaração da variável para o prefixo do tópico
-const char* topicPrefix = "lamp777";
+// Pinos
+const int ldrPin = A0;
+const int botaoTrocaTela = 10;
+const int ledVerde = 6;
+const int ledAmarelo = 7;
+const int ledVermelho = 8;
+const int buzzer = 9;
 
-// Variáveis para configurações editáveis
-char* SSID = const_cast<char*>(default_SSID);
-char* PASSWORD = const_cast<char*>(default_PASSWORD);
-char* BROKER_MQTT = const_cast<char*>(default_BROKER_MQTT);
-int BROKER_PORT = default_BROKER_PORT;
-char* TOPICO_SUBSCRIBE = const_cast<char*>(default_TOPICO_SUBSCRIBE);
-char* TOPICO_PUBLISH_1 = const_cast<char*>(default_TOPICO_PUBLISH_1);
-char* TOPICO_PUBLISH_2 = const_cast<char*>(default_TOPICO_PUBLISH_2);
-char* TOPICO_PUBLISH_3 = const_cast<char*>(default_TOPICO_PUBLISH_3);
-char* TOPICO_PUBLISH_4 = const_cast<char*>(default_TOPICO_PUBLISH_4);
-char* ID_MQTT = const_cast<char*>(default_ID_MQTT);
-int D4 = default_D4;
+// Constantes
+#define MIN_LUZ 15
+#define MAX_LUZ 820
+#define UTC_OFFSET 0
 
-WiFiClient espClient;
-PubSubClient MQTT(espClient);
-char EstadoSaida = '0';
+int paginaAtual = 0;
+bool ultimoEstadoBotao = HIGH;
 
-void initSerial() {
-    Serial.begin(115200);
-}
+// Caracteres personalizados
+byte iconeRelogio[8] = {
+  B00000,
+  B01110,
+  B10101,
+  B10111,
+  B10001,
+  B01110,
+  B00000,
+  B00000
+};
 
-void initWiFi() {
-    delay(10);
-    Serial.println("------Conexao WI-FI------");
-    Serial.print("Conectando-se na rede: ");
-    Serial.println(SSID);
-    Serial.println("Aguarde");
-    reconectWiFi();
-}
+byte iconeSol[8] = {
+  B00100,
+  B10101,
+  B01110,
+  B11111,
+  B01110,
+  B10101,
+  B00100,
+  B00000
+};
 
-void initMQTT() {
-    MQTT.setServer(BROKER_MQTT, BROKER_PORT);
-    MQTT.setCallback(mqtt_callback);
-}
+byte iconeTermometro[8] = {
+  B00100,
+  B00100,
+  B00100,
+  B01110,
+  B01110,
+  B11111,
+  B11111,
+  B01110
+};
+
+byte iconeGota[8] = {
+  B00100,
+  B00100,
+  B01010,
+  B01010,
+  B10001,
+  B10001,
+  B10001,
+  B01110
+};
 
 void setup() {
-    InitOutput();
-    initSerial();
-    dht.begin();  // Inicializa o sensor DHT
-    initWiFi();
-    initMQTT();
-    delay(5000);
-    MQTT.publish(TOPICO_PUBLISH_1, "s|on");
+  pinMode(botaoTrocaTela, INPUT_PULLUP);
+  pinMode(ledVerde, OUTPUT);
+  pinMode(ledAmarelo, OUTPUT);
+  pinMode(ledVermelho, OUTPUT);
+  pinMode(buzzer, OUTPUT);
+
+  Serial.begin(9600);
+  lcd.begin(16, 2);
+  dht.begin();
+
+  lcd.createChar(0, iconeRelogio);
+  lcd.createChar(1, iconeSol);
+  lcd.createChar(2, iconeTermometro);
+  lcd.createChar(3, iconeGota);
+
+  if (!rtc.begin()) {
+    lcd.setCursor(0, 0);
+    lcd.print("Erro no RTC");
+    while (true);
+  }
+
+  lcd.setCursor(0, 0);
+  lcd.print("Bem-vindo a");
+  lcd.setCursor(0, 1);
+  lcd.print("Vinheria Agnello");
+  delay(3000);
+  lcd.clear();
 }
-
-
-unsigned long lastDHTReadTime = 0;
-const unsigned long dhtInterval = 2000; // Intervalo de 2 segundos para leitura do DHT
 
 void loop() {
-    VerificaConexoesWiFIEMQTT();
-    EnviaEstadoOutputMQTT();
-    handleLuminosity();
-    MQTT.loop();
+  bool estadoAtual = digitalRead(botaoTrocaTela);
+  if (estadoAtual == LOW && ultimoEstadoBotao == HIGH) {
+    transicaoTela();           // Transição antes de mudar a tela
+    paginaAtual = (paginaAtual + 1) % 4;
+    delay(300);
+  }
+  ultimoEstadoBotao = estadoAtual;
 
-    unsigned long currentTime = millis();
-    if (currentTime - lastDHTReadTime >= dhtInterval) {
-        leituraDHT();  // Lê os dados do DHT a cada 2 segundos
-        lastDHTReadTime = currentTime;
-    }
+  switch (paginaAtual) {
+    case 0: mostrarHoraData(); break;
+    case 1: mostrarLuminosidade(); break;
+    case 2: mostrarTemperatura(); break;
+    case 3: mostrarUmidade(); break;
+  }
+
+  delay(500);
 }
 
-
-void reconectWiFi() {
-    if (WiFi.status() == WL_CONNECTED)
-        return;
-    WiFi.begin(SSID, PASSWORD);
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(100);
-        Serial.print(".");
-    }
-    Serial.println();
-    Serial.println("Conectado com sucesso na rede ");
-    Serial.print(SSID);
-    Serial.println("IP obtido: ");
-    Serial.println(WiFi.localIP());
-
-    // Garantir que o LED inicie desligado
-    digitalWrite(D4, LOW);
+void transicaoTela() {
+  for (int i = 0; i < 16; i++) {
+    lcd.setCursor(i, 0);
+    lcd.print(" ");
+    lcd.setCursor(i, 1);
+    lcd.print(" ");
+    delay(20);
+  }
 }
 
-void mqtt_callback(char* topic, byte* payload, unsigned int length) {
-    String msg;
-    for (int i = 0; i < length; i++) {
-        char c = (char)payload[i];
-        msg += c;
-    }
-    Serial.print("- Mensagem recebida: ");
-    Serial.println(msg);
+void mostrarHoraData() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.write(byte(0));
+  lcd.print(" Hora/Data");
 
-    // Forma o padrão de tópico para comparação
-    String onTopic = String(topicPrefix) + "@on|";
-    String offTopic = String(topicPrefix) + "@off|";
+  DateTime now = rtc.now();
+  now = DateTime(now.unixtime() + UTC_OFFSET * 3600);
 
-    // Compara com o tópico recebido
-    if (msg.equals(onTopic)) {
-        digitalWrite(D4, HIGH);
-        EstadoSaida = '1';
-    }
+  lcd.setCursor(0, 1);
+  if (now.day() < 10) lcd.print("0");
+  lcd.print(now.day());
+  lcd.print("/");
+  if (now.month() < 10) lcd.print("0");
+  lcd.print(now.month());
+  lcd.print("/");
+  lcd.print(now.year());
 
-    if (msg.equals(offTopic)) {
-        digitalWrite(D4, LOW);
-        EstadoSaida = '0';
-    }
+  lcd.print(" ");
+  if (now.hour() < 10) lcd.print("0");
+  lcd.print(now.hour());
+  lcd.print(":");
+  if (now.minute() < 10) lcd.print("0");
+  lcd.print(now.minute());
 }
 
-void VerificaConexoesWiFIEMQTT() {
-    if (!MQTT.connected())
-        reconnectMQTT();
-    reconectWiFi();
+void mostrarLuminosidade() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.write(byte(1));
+  lcd.print(" Luminosidade");
+
+  int leitura = 0;
+  for (int i = 0; i < 10; i++) {
+    leitura += analogRead(ldrPin);
+    delay(5);
+  }
+  leitura /= 10;
+
+  int luz = map(leitura, MIN_LUZ, MAX_LUZ, 0, 100);
+  luz = constrain(luz, 0, 100);
+
+  lcd.setCursor(0, 1);
+  lcd.print(luz);
+  lcd.print(" %");
+
+  if (luz <= 30) {
+    digitalWrite(ledVerde, HIGH);
+    digitalWrite(ledAmarelo, LOW);
+    digitalWrite(ledVermelho, LOW);
+    noTone(buzzer);
+  } else if (luz <= 70) {
+    digitalWrite(ledVerde, LOW);
+    digitalWrite(ledAmarelo, HIGH);
+    digitalWrite(ledVermelho, LOW);
+    tone(buzzer, 2000, 300);
+  } else {
+    digitalWrite(ledVerde, LOW);
+    digitalWrite(ledAmarelo, LOW);
+    digitalWrite(ledVermelho, HIGH);
+    noTone(buzzer);
+  }
 }
 
-void EnviaEstadoOutputMQTT() {
-    if (EstadoSaida == '1') {
-        MQTT.publish(TOPICO_PUBLISH_1, "s|on");
-        Serial.println("- Led Ligado");
-    }
+void mostrarTemperatura() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.write(byte(2));
+  lcd.print(" Temperatura");
 
-    if (EstadoSaida == '0') {
-        MQTT.publish(TOPICO_PUBLISH_1, "s|off");
-        Serial.println("- Led Desligado");
-    }
-    Serial.println("- Estado do LED onboard enviado ao broker!");
-    delay(1000);
+  float tempC = dht.readTemperature();
+
+  lcd.setCursor(0, 1);
+  if (isnan(tempC)) {
+    lcd.print("Erro leitura");
+  } else {
+    lcd.print(tempC, 1);
+    lcd.print(" C");
+  }
 }
 
-void InitOutput() {
-    pinMode(D4, OUTPUT);
-    digitalWrite(D4, HIGH);
-    boolean toggle = false;
+void mostrarUmidade() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.write(byte(3));
+  lcd.print(" Umidade");
 
-    for (int i = 0; i <= 10; i++) {
-        toggle = !toggle;
-        digitalWrite(D4, toggle);
-        delay(200);
-    }
+  float umidade = dht.readHumidity();
+
+  lcd.setCursor(0, 1);
+  if (isnan(umidade)) {
+    lcd.print("Erro leitura");
+  } else {
+    lcd.print(umidade, 1);
+    lcd.print(" %");
+  }
 }
-
-void reconnectMQTT() {
-    while (!MQTT.connected()) {
-        Serial.print("* Tentando se conectar ao Broker MQTT: ");
-        Serial.println(BROKER_MQTT);
-        if (MQTT.connect(ID_MQTT)) {
-            Serial.println("Conectado com sucesso ao broker MQTT!");
-            MQTT.subscribe(TOPICO_SUBSCRIBE);
-        } else {
-            Serial.println("Falha ao reconectar no broker.");
-            Serial.println("Haverá nova tentativa de conexão em 2s");
-            delay(2000);
-        }
-    }
-}
-
-void handleLuminosity() {
-    const int potPin = 34;
-    int sensorValue = analogRead(potPin);
-    int luminosity = map(sensorValue, 0, 4095, 0, 100);
-    String mensagem = String(luminosity);
-    Serial.print("Valor da luminosidade: ");
-    Serial.println(mensagem.c_str());
-    MQTT.publish(TOPICO_PUBLISH_2, mensagem.c_str());
-}
-
-void leituraDHT() {
-    // Leitura dos dados do sensor DHT
-    float temperatura = dht.readTemperature();
-    float umidade = dht.readHumidity();
-
-    // Verifica se a leitura foi bem sucedida
-    if (isnan(temperatura) || isnan(umidade)) {
-        Serial.println("Falha ao ler dados do DHT!");
-        return;
-    }
-
-    // Formata os dados para envio via MQTT
-    String mensagemTemperatura = "Temperatura: " + String(temperatura) + " °C";
-    String mensagemUmidade = "Umidade: " + String(umidade) + " %";
-
-    // Envia os dados via MQTT em tópicos separados
-    MQTT.publish(TOPICO_PUBLISH_3, mensagemTemperatura.c_str()); // Tópico para temperatura
-    MQTT.publish(TOPICO_PUBLISH_4, mensagemUmidade.c_str()); // Tópico para umidade
-
-    Serial.println("Dados do DHT enviados: " + mensagemTemperatura); // Exibe a temperatura no Monitor Serial
-    Serial.println("Dados do DHT enviados: " + mensagemUmidade); // Exibe a umidade no Monitor Serial
-}
-
