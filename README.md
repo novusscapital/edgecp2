@@ -8,7 +8,7 @@ Arduino IDE instalado em sua máquina
 
 Placa Arduino Uno (ou compatível)
 
-Componentes conectados conforme o diagrama de circuito: (https://wokwi.com/projects/407336114585508865)
+Componentes conectados conforme o diagrama de circuito: (https://wokwi.com/projects/431334227052135425)
 
 --------
 
